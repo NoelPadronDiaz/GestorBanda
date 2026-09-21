@@ -1,0 +1,288 @@
+// ALCARAVAN-APP · esquema de la Fase 0 (auth, band-profile, members, documents, audit).
+//
+// Convenciones:
+//  - Tablas y columnas en snake_case (@@map / @map); campos Prisma en camelCase.
+//  - IDs UUID generados por la BD (gen_random_uuid()), timestamps TIMESTAMPTZ (UTC).
+//  - created_at / updated_at en todas las tablas de negocio; deleted_at solo donde hay borrado lógico.
+//  - Dinero (módulos futuros): amount_cents BIGINT + currency CHAR(3), nunca float.
+//  - Constraints que Prisma no expresa (CHECK, triggers) viven en el SQL de las migraciones.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+enum RefreshTokenRevokeReason {
+  LOGOUT
+  REUSE_DETECTED
+  ADMIN
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  LEFT
+}
+
+enum DocumentCategory {
+  IDENTITY
+  INVOICE
+  SCORE
+  CONTRACT
+  CERTIFICATE
+  OTHER
+}
+
+// ───────────────────── band-profile ─────────────────────
+
+/// Fila única: la aplicación es single tenant. El id está fijado a 1 (CHECK en la migración).
+model BandProfile {
+  id              Int       @id @default(1) @db.SmallInt
+  name            String    @db.VarChar(200)
+  legalName       String?   @map("legal_name") @db.VarChar(200)
+  taxId           String?   @map("tax_id") @db.VarChar(32)
+  email           String?   @db.VarChar(254)
+  phone           String?   @db.VarChar(32)
+  website         String?   @db.VarChar(255)
+  addressLine     String?   @map("address_line") @db.VarChar(255)
+  city            String?   @db.VarChar(120)
+  postalCode      String?   @map("postal_code") @db.VarChar(16)
+  country         String    @default("ES") @db.Char(2)
+  defaultCurrency String    @default("EUR") @map("default_currency") @db.Char(3)
+  timezone        String    @default("Europe/Madrid") @db.VarChar(64)
+  foundedOn       DateTime? @map("founded_on") @db.Date
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("band_profile")
+}
+
+// ─────────────────────── members ───────────────────────
+
+model Member {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  firstName  String       @map("first_name") @db.VarChar(120)
+  lastName   String       @map("last_name") @db.VarChar(160)
+  email      String?      @db.VarChar(254)
+  phone      String?      @db.VarChar(32)
+  birthDate  DateTime?    @map("birth_date") @db.Date
+  status     MemberStatus @default(ACTIVE)
+  joinedOn   DateTime?    @map("joined_on") @db.Date
+  leftOn     DateTime?    @map("left_on") @db.Date
+  /// Observaciones libres (único texto libre del modelo).
+  notes      String?
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt  DateTime?    @map("deleted_at") @db.Timestamptz(3)
+
+  userAccount UserAccount?
+  invitations Invitation[]
+
+  @@index([lastName, firstName])
+  @@index([status])
+  @@map("member")
+}
+
+// ───────────────────────── auth ─────────────────────────
+
+model UserAccount {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Siempre en minúsculas (CHECK en la migración).
+  email             String     @unique @db.VarChar(254)
+  passwordHash      String     @map("password_hash") @db.VarChar(255)
+  status            UserStatus @default(ACTIVE)
+  memberId          String?    @unique @map("member_id") @db.Uuid
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  passwordChangedAt DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(3)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  member          Member?        @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  roles           UserRole[]     @relation("UserRoles")
+  rolesAssigned   UserRole[]     @relation("RoleAssigner")
+  refreshTokens   RefreshToken[]
+  invitationsSent Invitation[]
+  auditLogs       AuditLog[]
+  documents       Document[]
+
+  @@map("user_account")
+}
+
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique @db.VarChar(64)
+  name        String   @db.VarChar(120)
+  description String?  @db.VarChar(255)
+  /// Los roles de sistema los gestiona el seed a partir de packages/shared.
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  permissions RolePermission[]
+  users       UserRole[]
+  invitations Invitation[]
+
+  @@map("role")
+}
+
+model Permission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// `<recurso>.<acción>`, p. ej. members.read
+  code        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  roles RolePermission[]
+
+  @@map("permission")
+}
+
+model RolePermission {
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permission")
+}
+
+model UserRole {
+  userId       String   @map("user_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  assignedById String?  @map("assigned_by_id") @db.Uuid
+  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
+
+  user       UserAccount  @relation("UserRoles", fields: [userId], references: [id], onDelete: Cascade)
+  role       Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy UserAccount? @relation("RoleAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_role")
+}
+
+/// Cada fila es un refresh token emitido. Todos los tokens de un mismo login comparten family_id;
+/// al rotar, el token usado queda con rotated_at y se crea uno nuevo en la misma familia.
+/// Solo se guarda el hash SHA-256 del token, nunca el token en claro.
+model RefreshToken {
+  id                String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String                    @map("user_id") @db.Uuid
+  familyId          String                    @map("family_id") @db.Uuid
+  tokenHash         String                    @unique @map("token_hash") @db.Char(64)
+  userAgent         String?                   @map("user_agent") @db.VarChar(512)
+  ipAddress         String?                   @map("ip_address") @db.VarChar(45)
+  expiresAt         DateTime                  @map("expires_at") @db.Timestamptz(3)
+  /// Tope absoluto de la familia: la rotación deslizante nunca lo supera.
+  absoluteExpiresAt DateTime                  @map("absolute_expires_at") @db.Timestamptz(3)
+  rotatedAt         DateTime?                 @map("rotated_at") @db.Timestamptz(3)
+  revokedAt         DateTime?                 @map("revoked_at") @db.Timestamptz(3)
+  revokedReason     RefreshTokenRevokeReason? @map("revoked_reason")
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_token")
+}
+
+model Invitation {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email       String           @db.VarChar(254)
+  roleId      String           @map("role_id") @db.Uuid
+  /// Si se indica, la cuenta creada al aceptar queda vinculada a este miembro.
+  memberId    String?          @map("member_id") @db.Uuid
+  tokenHash   String           @unique @map("token_hash") @db.Char(64)
+  status      InvitationStatus @default(PENDING)
+  expiresAt   DateTime         @map("expires_at") @db.Timestamptz(3)
+  acceptedAt  DateTime?        @map("accepted_at") @db.Timestamptz(3)
+  revokedAt   DateTime?        @map("revoked_at") @db.Timestamptz(3)
+  invitedById String           @map("invited_by_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  role      Role        @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  member    Member?     @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  invitedBy UserAccount @relation(fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([email])
+  @@index([status, expiresAt])
+  @@map("invitation")
+}
+
+// ─────────────────────── documents ───────────────────────
+
+/// Metadatos de un fichero guardado en un bucket S3 privado. El storage_key jamás se expone:
+/// la descarga se hace siempre con URL firmada de corta duración.
+model Document {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storageKey       String           @unique @map("storage_key") @db.VarChar(512)
+  originalFilename String           @map("original_filename") @db.VarChar(255)
+  mimeType         String           @map("mime_type") @db.VarChar(127)
+  sizeBytes        Int              @map("size_bytes")
+  sha256           String           @db.Char(64)
+  category         DocumentCategory @default(OTHER)
+  /// Vínculo genérico permitido solo en servicios transversales (ambos nulos o ambos informados).
+  entityType       String?          @map("entity_type") @db.VarChar(64)
+  entityId         String?          @map("entity_id") @db.Uuid
+  uploadedById     String?          @map("uploaded_by_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  uploadedBy UserAccount? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([category])
+  @@map("document")
+}
+
+// ───────────────────────── audit ─────────────────────────
+
+/// Append-only: un trigger de la migración impide UPDATE, DELETE y TRUNCATE.
+/// No tiene updated_at ni deleted_at por diseño.
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  /// Código con puntos, p. ej. members.updated, auth.login.failed
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(64)
+  entityId    String?  @map("entity_id") @db.VarChar(64)
+  /// Estado previo y posterior (con datos sensibles ya redactados).
+  before      Json?    @db.JsonB
+  after       Json?    @db.JsonB
+  metadata    Json?    @db.JsonB
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  userAgent   String?  @map("user_agent") @db.VarChar(512)
+  traceId     String?  @map("trace_id") @db.VarChar(64)
+
+  actor UserAccount? @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, occurredAt(sort: Desc)])
+  @@index([actorUserId, occurredAt(sort: Desc)])
+  @@index([occurredAt(sort: Desc)])
+  @@map("audit_log")
+}

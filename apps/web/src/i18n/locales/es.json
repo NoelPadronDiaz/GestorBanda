@@ -1,0 +1,91 @@
+{
+  "app": {
+    "name": "ALCARAVAN",
+    "tagline": "Gestión integral de la banda"
+  },
+  "common": {
+    "loading": "Cargando…",
+    "logout": "Cerrar sesión",
+    "search": "Buscar",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "openMenu": "Abrir menú",
+    "closeMenu": "Cerrar menú",
+    "notAvailable": "—",
+    "backToHome": "Volver al inicio"
+  },
+  "nav": {
+    "title": "Módulos",
+    "dashboard": "Inicio",
+    "members": "Miembros",
+    "bandProfile": "Perfil de la banda"
+  },
+  "auth": {
+    "loginTitle": "Iniciar sesión",
+    "loginSubtitle": "Accede con tu cuenta de la banda",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "submit": "Entrar",
+    "submitting": "Entrando…"
+  },
+  "validation": {
+    "required": "Este campo es obligatorio",
+    "email": "Introduce un correo válido"
+  },
+  "dashboard": {
+    "welcome": "Hola, {{email}}",
+    "intro": "Estos son los módulos a los que tienes acceso.",
+    "empty": "Todavía no tienes módulos disponibles. Consulta con la secretaría."
+  },
+  "members": {
+    "title": "Miembros",
+    "searchPlaceholder": "Buscar por nombre o correo",
+    "name": "Nombre",
+    "email": "Correo",
+    "phone": "Teléfono",
+    "status": {
+      "label": "Estado",
+      "ACTIVE": "Activo",
+      "INACTIVE": "Inactivo",
+      "LEFT": "Baja"
+    },
+    "empty": "No hay miembros que coincidan.",
+    "total_one": "{{count}} miembro",
+    "total_other": "{{count}} miembros"
+  },
+  "bandProfile": {
+    "title": "Perfil de la banda",
+    "name": "Nombre",
+    "legalName": "Razón social",
+    "taxId": "CIF",
+    "email": "Correo",
+    "phone": "Teléfono",
+    "website": "Web",
+    "address": "Dirección",
+    "city": "Localidad",
+    "postalCode": "Código postal",
+    "country": "País",
+    "currency": "Moneda",
+    "timezone": "Zona horaria",
+    "foundedOn": "Fundación"
+  },
+  "forbidden": {
+    "title": "Sin permiso",
+    "message": "Tu rol no tiene acceso a esta sección."
+  },
+  "notFound": {
+    "title": "Página no encontrada",
+    "message": "La dirección no existe o ha cambiado."
+  },
+  "errors": {
+    "UNKNOWN": "Ha ocurrido un error inesperado. Inténtalo de nuevo.",
+    "NETWORK": "No se pudo conectar con el servidor.",
+    "INVALID_CREDENTIALS": "Correo o contraseña incorrectos.",
+    "TOO_MANY_REQUESTS": "Demasiados intentos. Espera un minuto y vuelve a probar.",
+    "UNAUTHORIZED": "Tu sesión ha caducado. Vuelve a iniciar sesión.",
+    "FORBIDDEN": "No tienes permiso para hacer esto.",
+    "NOT_FOUND": "No se ha encontrado el recurso.",
+    "VALIDATION_ERROR": "Revisa los datos introducidos.",
+    "INTERNAL_ERROR": "Error interno del servidor."
+  }
+}

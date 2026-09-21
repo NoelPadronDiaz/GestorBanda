@@ -1,0 +1,187 @@
+name: CI
+
+# lint → test → build → verificación de migraciones → imágenes → deploy (solo main)
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # versión tomada de "packageManager" en package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  migrations:
+    name: Verify database migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: alcaravan_ci
+          POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=icu --icu-locale=es-ES
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d alcaravan_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/alcaravan_ci?schema=public
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Validate Prisma schema
+        run: pnpm exec prisma validate
+
+      - name: Apply every migration on an empty database
+        run: pnpm exec prisma migrate deploy
+
+      # Falla si schema.prisma cambió sin una migración que lo respalde.
+      - name: Detect drift between migrations and schema.prisma
+        run: >
+          pnpm exec prisma migrate diff
+          --from-schema-datasource prisma/schema.prisma
+          --to-schema-datamodel prisma/schema.prisma
+          --exit-code
+
+      - name: Seed is idempotent
+        env:
+          SEED_ADMIN_EMAIL: ci-admin@alcaravan.local
+          SEED_ADMIN_PASSWORD: ci-only-password-123
+        run: |
+          pnpm db:seed
+          pnpm db:seed
+
+  images:
+    name: Build container images
+    needs: [quality, migrations]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api_image: ${{ steps.meta.outputs.api_image }}
+      web_image: ${{ steps.meta.outputs.web_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image names (GHCR exige minúsculas)
+        id: meta
+        run: |
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "api_image=${prefix}/api:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "web_image=${prefix}/web:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # En PR solo se construye (comprueba que los Dockerfile siguen válidos); en main además se publica.
+      - name: API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: prod
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.api_image }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          target: prod
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.web_image }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  deploy:
+    name: Deploy to staging
+    needs: images
+    # Actívalo con la variable de repositorio DEPLOY_ENABLED=true cuando el destino esté configurado.
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 1) Migraciones: siempre antes de arrancar la nueva versión y desde la propia imagen de la API.
+      - name: Run database migrations
+        env:
+          API_IMAGE: ${{ needs.images.outputs.api_image }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          docker run --rm -e DATABASE_URL "$API_IMAGE" pnpm exec prisma migrate deploy
+          docker run --rm -e DATABASE_URL "$API_IMAGE" pnpm db:seed
+
+      # 2) TODO: sustituir por el mecanismo de despliegue real (SSH + docker compose pull/up, Kubernetes,
+      #    Fly.io, Railway...). Las imágenes ya están publicadas en GHCR con el SHA del commit.
+      - name: Roll out new images
+        run: |
+          echo "Deploy target not configured yet."
+          echo "api: ${{ needs.images.outputs.api_image }}"
+          echo "web: ${{ needs.images.outputs.web_image }}"
+          exit 1

@@ -1,0 +1,132 @@
+# Entorno de DESARROLLO local: PostgreSQL + almacenamiento S3 (MinIO) + API + web.
+#
+#   docker compose up --build            # todo
+#   docker compose up -d postgres minio minio-init   # solo infraestructura (API y web en el host con pnpm dev)
+#
+# Los valores por defecto sirven para arrancar sin .env; copia .env.example a .env para cambiarlos.
+# Producción/staging usan otros ficheros compose y secretos reales: nada de esto es para producción.
+name: alcaravan
+
+services:
+  postgres:
+    # Imagen Debian (glibc) y no Alpine: la ordenación y el ILIKE con ñ y tildes dependen de la collation.
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alcaravan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alcaravan_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-alcaravan}
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale-provider=icu --icu-locale=es-ES'
+      TZ: UTC
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Almacenamiento compatible con S3. La app solo habla S3: en producción sirve cualquier proveedor.
+  # TODO: fija un tag RELEASE.* concreto en lugar de latest cuando elijas versión.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-alcaravan}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-alcaravan_minio_password}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Crea el bucket PRIVADO (sin acceso anónimo). Los ficheros solo se sirven con URL firmada.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: 'no'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-alcaravan}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-alcaravan_minio_password}
+      S3_BUCKET: ${S3_BUCKET:-alcaravan-documents}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      mc anonymous set none local/$${S3_BUCKET} &&
+      echo 'bucket ready: '$${S3_BUCKET}
+      "
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alcaravan}:${POSTGRES_PASSWORD:-alcaravan_dev_password}@postgres:5432/${POSTGRES_DB:-alcaravan}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-5173}
+      S3_ENDPOINT: http://minio:9000
+      # Host que ve el NAVEGADOR en las URLs firmadas (la API firma con este endpoint).
+      S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_PORT:-9000}
+      S3_BUCKET: ${S3_BUCKET:-alcaravan-documents}
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-alcaravan}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-alcaravan_minio_password}
+      S3_FORCE_PATH_STYLE: 'true'
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@alcaravan.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-change-me-please-123}
+      # Los bind mounts de Docker en Windows/macOS no emiten eventos de fichero: sondeo para el modo watch.
+      TSC_WATCHFILE: DynamicPriorityPolling
+      TSC_WATCHDIRECTORY: RecursiveDirectoryUsingDynamicPriorityPolling
+    ports:
+      - '${API_PORT:-3000}:3000'
+    volumes:
+      - ./apps/api/src:/workspace/apps/api/src
+      - ./apps/api/prisma:/workspace/apps/api/prisma
+      - ./packages/shared/src:/workspace/packages/shared/src
+    command: >
+      sh -c "pnpm --filter @alcaravan/shared build &&
+             pnpm exec prisma migrate deploy &&
+             pnpm db:seed &&
+             pnpm start:dev"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: dev
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      VITE_API_PROXY_TARGET: http://api:3000
+      VITE_USE_POLLING: 'true'
+    ports:
+      - '${WEB_PORT:-5173}:5173'
+    volumes:
+      - ./apps/web/src:/workspace/apps/web/src
+      - ./apps/web/index.html:/workspace/apps/web/index.html
+      - ./packages/shared/src:/workspace/packages/shared/src
+    command: sh -c "pnpm --filter @alcaravan/shared build && pnpm exec vite --host 0.0.0.0"
+
+volumes:
+  postgres_data:
+  minio_data:
