@@ -88,6 +88,18 @@ export class UpdateBandProfileDto {
   @IsOptional()
   @IsISO8601({ strict: true })
   founded_on?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'IBAN de cobro que figura en las facturas' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(34)
+  iban?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Texto al pie de las facturas' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  invoice_footer?: string | null;
 }
 
 export class BandProfileResponseDto {
@@ -104,6 +116,8 @@ export class BandProfileResponseDto {
   default_currency!: string;
   timezone!: string;
   founded_on!: string | null;
+  iban!: string | null;
+  invoice_footer!: string | null;
   updated_at!: string;
 
   static from(profile: BandProfile): BandProfileResponseDto {
@@ -121,6 +135,8 @@ export class BandProfileResponseDto {
       default_currency: profile.defaultCurrency,
       timezone: profile.timezone,
       founded_on: profile.foundedOn ? profile.foundedOn.toISOString().slice(0, 10) : null,
+      iban: profile.iban,
+      invoice_footer: profile.invoiceFooter,
       updated_at: profile.updatedAt.toISOString(),
     };
   }

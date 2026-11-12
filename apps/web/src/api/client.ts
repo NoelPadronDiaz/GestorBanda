@@ -100,16 +100,18 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, query, signal, auth = true } = options;
 
+  // FormData (subida de ficheros): el navegador pone el Content-Type con su boundary.
+  const isForm = body instanceof FormData;
   const send = () =>
     fetch(buildUrl(path, query), {
       method,
       credentials: 'include',
       signal,
       headers: {
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         ...(auth && tokenStore.get() ? { Authorization: `Bearer ${tokenStore.get()}` } : {}),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
     });
 
   let response = await send();

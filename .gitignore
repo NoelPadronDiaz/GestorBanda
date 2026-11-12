@@ -28,3 +28,7 @@ Thumbs.db
 
 # certificados
 *.pem
+# docker/certs/: certificados CA locales (proxy corporativo, antivirus con inspección TLS)
+# que los Dockerfile instalan si existen. Nunca se versionan; ver docker/certs/.gitkeep.
+docker/certs/*
+!docker/certs/.gitkeep

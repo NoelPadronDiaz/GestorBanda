@@ -109,13 +109,34 @@ pnpm dev               # api :3000 y web :5173 (Vite reenvía /api a la API)
   guarda actor, IP, `trace_id` y estado antes/después con los campos sensibles redactados. Los cambios auditados y su
   entrada de auditoría se confirman en la misma transacción.
 
+## Módulos económicos (Fase 1)
+
+Integran en la API y la base de datos las herramientas de _Alcaraván Gestión 2.13_ (la app local con IndexedDB),
+con la misma identidad visual (azul noche `#142841`, dorado `#d5b16a`, logotipo oficial en `apps/web/public/brand/`).
+
+| Grupo                | Módulo API (`/api/v1/...`)                                                                | Qué hace                                                                                                                                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Facturación y gastos | `billing` (`/billing/clients`, `invoices`, `suppliers`, `expenses`, `recurring-expenses`) | Series ALC (banda) y ESC (escuela) con numeración atómica por año, IGIC/IRPF, PDF del gasto en `documents`.                                                                                                            |
+| Escuela y personal   | `school`, `payroll`                                                                       | Alumnado, tarifas (IGIC incluido), generación mensual de cuotas → factura ESC; nóminas.                                                                                                                                |
+| Contabilidad         | `accounting`, `treasury`, `budgets`                                                       | Diario inmutable (Debe = Haber comprobado en BD), propuestas de asiento, cola de pendientes, mayor, sumas y saldos, resultados, balance, cierre con apertura; extractos CSV y conciliación; presupuesto frente a real. |
+| Fiscalidad y ayudas  | `tax`, `grants`                                                                           | Libros de IGIC trimestral (modelo 420), retenciones (111/190), subvenciones y su justificación.                                                                                                                        |
+| Gestión interna      | `internal-cash`                                                                           | Caja de rifas, refuerzos y eventos fuera de la contabilidad oficial.                                                                                                                                                   |
+| Inicio               | `dashboard`                                                                               | Indicadores y avisos según los permisos de cada rol.                                                                                                                                                                   |
+
+- **Importes** en céntimos (`BIGINT`), tipos en puntos básicos (700 = 7 %). La API recibe `_cents` y porcentajes.
+- **Asientos**: no se editan ni borran (triggers); se corrigen con una reversión. Un ejercicio cerrado no admite asientos.
+  El cierre exige que el ejercicio siguiente aún no tenga asientos (su apertura es el primero).
+- **Permisos** nuevos: `billing.*`, `school.*`, `payroll.*`, `accounting.read/post/close`, `treasury.*`, `budgets.*`,
+  `tax_reports.read`, `grants.*`, `internal_cash.*` (asignación por rol en `packages/shared/src/permissions.ts`).
+- Los informes contables y fiscales son orientativos: la interfaz lo advierte y no sustituyen a la asesoría.
+
 ## Convenciones
 
 - **Nombres**: BD y JSON de la API en `snake_case`; TypeScript en `camelCase`. Prisma mapea con `@map`/`@@map` y
   cada DTO de respuesta tiene un `from()` explícito que decide qué campos salen (nunca se devuelve una fila de Prisma).
   Tablas en singular (`member`, `audit_log`). Código, endpoints y permisos en inglés; interfaz en español.
 - **Errores** con formato único `{ code, message, details, trace_id }`. `code` es estable y el frontend traduce por `code`.
-- **Dinero** (módulos futuros): `amount_cents BIGINT` + `currency CHAR(3)`. Nunca `float`.
+- **Dinero**: `*_cents BIGINT` (EUR, moneda de `band_profile`). Nunca `float`.
 - **Fechas**: `timestamptz` en UTC; fechas sin hora como `date` (`YYYY-MM-DD` en JSON).
 - **Migraciones**: SQL solo ASCII (los comentarios con tildes rompen en bases con collation no UTF-8). Nunca se edita una
   migración ya aplicada; CI aplica todas desde cero y falla si `schema.prisma` no coincide con lo migrado.
@@ -133,11 +154,15 @@ pnpm dev               # api :3000 y web :5173 (Vite reenvía /api a la API)
 
 ## Estado de verificación
 
-Comprobado en local: `lint`, `typecheck`, tests (API 22, web 14) y `build` de ambas apps; migración inicial aplicada
+Comprobado en local: `lint`, `typecheck`, tests (API 29, web 19) y `build` de ambas apps; migración inicial aplicada
 sobre PostgreSQL real sin drift; seed idempotente; 44 comprobaciones de extremo a extremo contra la API en marcha (login,
 rotación y reutilización de refresh token, RBAC, invitaciones, auditoría, formato de error, límite de intentos);
 invariantes de BD (triggers append-only, CHECKs); y flujo de UI en un navegador real (login, sesión que sobrevive a
 recargar, rutas por permiso, logout, vista móvil).
+
+Módulos económicos: migración `20261112000000_finance` aplicada sin drift, prueba de extremo a extremo de todo el circuito
+(facturas y numeración, cuotas → facturas ESC, gastos con IRPF, nóminas, asientos y reversiones, conciliación bancaria,
+IGIC, retenciones, presupuestos, subvenciones, caja interna, cierre y apertura) y capturas de todas las pantallas nuevas.
 
 **No verificado** (no había Docker en la máquina de desarrollo): que `docker compose up` arranque completo, los Dockerfile,
 y la subida/descarga real de documentos contra MinIO (la validación previa a S3 sí está probada). Los workflows de CI

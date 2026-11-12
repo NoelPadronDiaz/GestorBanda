@@ -43,6 +43,8 @@ export class BandProfileService {
             dto.founded_on === undefined || dto.founded_on === null
               ? dto.founded_on
               : new Date(dto.founded_on),
+          iban: dto.iban === undefined ? undefined : dto.iban?.replace(/\s+/g, ' ').trim() || null,
+          invoiceFooter: dto.invoice_footer,
         },
       });
       const response = BandProfileResponseDto.from(updated);

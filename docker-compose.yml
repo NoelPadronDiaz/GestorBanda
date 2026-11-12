@@ -29,9 +29,11 @@ services:
       retries: 20
 
   # Almacenamiento compatible con S3. La app solo habla S3: en producción sirve cualquier proveedor.
+  # Imagen desde quay.io: MinIO retiró minio/minio y minio/mc de Docker Hub (ya no se pueden
+  # descargar de ahí, ni con :latest ni con un tag concreto).
   # TODO: fija un tag RELEASE.* concreto en lugar de latest cuando elijas versión.
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -50,7 +52,7 @@ services:
 
   # Crea el bucket PRIVADO (sin acceso anónimo). Los ficheros solo se sirven con URL firmada.
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
@@ -104,6 +106,7 @@ services:
       - ./packages/shared/src:/workspace/packages/shared/src
     command: >
       sh -c "pnpm --filter @alcaravan/shared build &&
+             pnpm exec prisma generate &&
              pnpm exec prisma migrate deploy &&
              pnpm db:seed &&
              pnpm start:dev"

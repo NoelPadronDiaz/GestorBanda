@@ -10,12 +10,20 @@ ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     COREPACK_HOME=/opt/corepack \
     CI=true
-# Prisma necesita openssl en la imagen slim. pnpm se prepara en una ruta común para que el
-# usuario "node" de la imagen final pueda ejecutar `pnpm exec prisma migrate deploy` sin red.
+# Prisma necesita openssl en la imagen slim.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && corepack enable \
+    && rm -rf /var/lib/apt/lists/*
+# Certificado CA adicional, opcional: si tu red intercepta TLS (proxy corporativo, antivirus
+# con inspección HTTPS, p. ej. Avast/Kaspersky/ESET) y el build falla con "unable to verify
+# the first certificate", exporta su certificado raíz como .crt en docker/certs/ (ignorado
+# por git) y repite el build. Sin ningún .crt ahí, estas líneas no cambian nada.
+COPY docker/certs/ /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+# pnpm se prepara en una ruta común para que el usuario "node" de la imagen final pueda
+# ejecutar `pnpm exec prisma migrate deploy` sin red.
+RUN corepack enable \
     && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /workspace
 

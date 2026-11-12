@@ -6,6 +6,7 @@ import { AppException } from '../../common/errors/app.exception';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { ExpensesService } from '../billing/expenses.service';
 import { MembersService } from '../members/members.service';
 import { MAX_UPLOAD_BYTES, type DocumentEntityType } from './documents.constants';
 import {
@@ -37,6 +38,7 @@ export class DocumentsService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly members: MembersService,
+    private readonly expenses: ExpensesService,
   ) {}
 
   async upload(
@@ -188,6 +190,9 @@ export class DocumentsService {
     switch (entityType) {
       case 'MEMBER':
         await this.members.assertExists(entityId);
+        return;
+      case 'EXPENSE':
+        await this.expenses.assertExists(entityId);
         return;
     }
   }

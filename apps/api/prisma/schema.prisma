@@ -1,4 +1,5 @@
-// ALCARAVAN-APP · esquema de la Fase 0 (auth, band-profile, members, documents, audit).
+// ALCARAVAN-APP · esquema: Fase 0 (auth, band-profile, members, documents, audit) y gestión económica
+// (facturación, escuela, personal, contabilidad, tesorería, presupuestos, fiscalidad y subvenciones).
 //
 // Convenciones:
 //  - Tablas y columnas en snake_case (@@map / @map); campos Prisma en camelCase.
@@ -68,6 +69,10 @@ model BandProfile {
   defaultCurrency String    @default("EUR") @map("default_currency") @db.Char(3)
   timezone        String    @default("Europe/Madrid") @db.VarChar(64)
   foundedOn       DateTime? @map("founded_on") @db.Date
+  /// Cuenta de cobro que figura en las facturas emitidas.
+  iban            String?   @db.VarChar(34)
+  /// Texto libre al pie de las facturas emitidas.
+  invoiceFooter   String?   @map("invoice_footer") @db.VarChar(1000)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -77,23 +82,25 @@ model BandProfile {
 // ─────────────────────── members ───────────────────────
 
 model Member {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  firstName  String       @map("first_name") @db.VarChar(120)
-  lastName   String       @map("last_name") @db.VarChar(160)
-  email      String?      @db.VarChar(254)
-  phone      String?      @db.VarChar(32)
-  birthDate  DateTime?    @map("birth_date") @db.Date
-  status     MemberStatus @default(ACTIVE)
-  joinedOn   DateTime?    @map("joined_on") @db.Date
-  leftOn     DateTime?    @map("left_on") @db.Date
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  firstName String       @map("first_name") @db.VarChar(120)
+  lastName  String       @map("last_name") @db.VarChar(160)
+  email     String?      @db.VarChar(254)
+  phone     String?      @db.VarChar(32)
+  birthDate DateTime?    @map("birth_date") @db.Date
+  status    MemberStatus @default(ACTIVE)
+  joinedOn  DateTime?    @map("joined_on") @db.Date
+  leftOn    DateTime?    @map("left_on") @db.Date
   /// Observaciones libres (único texto libre del modelo).
-  notes      String?
-  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt  DateTime?    @map("deleted_at") @db.Timestamptz(3)
+  notes     String?
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime?    @map("deleted_at") @db.Timestamptz(3)
 
   userAccount UserAccount?
   invitations Invitation[]
+  students    Student[]
+  workers     Worker[]
 
   @@index([lastName, firstName])
   @@index([status])
@@ -114,13 +121,15 @@ model UserAccount {
   createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  member          Member?        @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  roles           UserRole[]     @relation("UserRoles")
-  rolesAssigned   UserRole[]     @relation("RoleAssigner")
-  refreshTokens   RefreshToken[]
-  invitationsSent Invitation[]
-  auditLogs       AuditLog[]
-  documents       Document[]
+  member            Member?        @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  roles             UserRole[]     @relation("UserRoles")
+  rolesAssigned     UserRole[]     @relation("RoleAssigner")
+  refreshTokens     RefreshToken[]
+  invitationsSent   Invitation[]
+  auditLogs         AuditLog[]
+  documents         Document[]
+  journalEntries    JournalEntry[]
+  fiscalYearsClosed FiscalYear[]
 
   @@map("user_account")
 }
@@ -285,4 +294,624 @@ model AuditLog {
   @@index([actorUserId, occurredAt(sort: Desc)])
   @@index([occurredAt(sort: Desc)])
   @@map("audit_log")
+}
+
+// ═══════════════════════ Gestión económica ═══════════════════════
+//
+// Dinero en céntimos (BIGINT) y porcentajes en puntos básicos (INT, 7 % = 700).
+// Los documentos de origen (factura, gasto, nómina) guardan el asiento que los contabiliza; los
+// asientos son inmutables (trigger) y se corrigen con un asiento de reversión, nunca borrándolos.
+
+enum Activity {
+  BAND
+  SCHOOL
+  SHARED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  DIRECT_DEBIT
+  CARD
+  OTHER
+}
+
+// ───────────────────── billing: clientes y facturas ─────────────────────
+
+enum InvoiceSeries {
+  ALC
+  ESC
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model Client {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String    @db.VarChar(160)
+  taxId       String?   @map("tax_id") @db.VarChar(32)
+  addressLine String?   @map("address_line") @db.VarChar(255)
+  city        String?   @db.VarChar(160)
+  email       String?   @db.VarChar(254)
+  phone       String?   @db.VarChar(40)
+  notes       String?   @db.VarChar(2000)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  invoices Invoice[]
+
+  @@index([name])
+  @@map("client")
+}
+
+/// Contador por serie y año. Se incrementa con INSERT ... ON CONFLICT DO UPDATE dentro de la
+/// transacción que crea la factura, así dos facturas simultáneas nunca comparten número.
+model InvoiceSequence {
+  series     InvoiceSeries
+  year       Int           @db.SmallInt
+  lastNumber Int           @default(0) @map("last_number")
+
+  @@id([series, year])
+  @@map("invoice_sequence")
+}
+
+model Invoice {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  series            InvoiceSeries
+  year              Int            @db.SmallInt
+  number            Int
+  /// Número completo legible, p. ej. ALC-2026-007.
+  code              String         @unique @db.VarChar(20)
+  issueDate         DateTime       @map("issue_date") @db.Date
+  operationDate     DateTime?      @map("operation_date") @db.Date
+  clientId          String?        @map("client_id") @db.Uuid
+  /// Datos del destinatario congelados al emitir (la ficha del cliente puede cambiar después).
+  recipientName     String         @map("recipient_name") @db.VarChar(160)
+  recipientTaxId    String?        @map("recipient_tax_id") @db.VarChar(32)
+  recipientAddress  String?        @map("recipient_address") @db.VarChar(255)
+  recipientCity     String?        @map("recipient_city") @db.VarChar(160)
+  recipientEmail    String?        @map("recipient_email") @db.VarChar(254)
+  taxRateBp         Int            @map("tax_rate_bp")
+  withholdingRateBp Int            @default(0) @map("withholding_rate_bp")
+  baseCents         BigInt         @map("base_cents")
+  taxCents          BigInt         @map("tax_cents")
+  withholdingCents  BigInt         @map("withholding_cents")
+  totalCents        BigInt         @map("total_cents")
+  status            InvoiceStatus  @default(PENDING)
+  paidOn            DateTime?      @map("paid_on") @db.Date
+  paymentMethod     PaymentMethod? @map("payment_method")
+  notes             String?        @db.VarChar(2000)
+  journalEntryId    String?        @unique @map("journal_entry_id") @db.Uuid
+  paymentEntryId    String?        @unique @map("payment_entry_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  client       Client?       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  lines        InvoiceLine[]
+  studentFee   StudentFee?
+  journalEntry JournalEntry? @relation("InvoiceAccrual", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  paymentEntry JournalEntry? @relation("InvoicePayment", fields: [paymentEntryId], references: [id], onDelete: Restrict)
+
+  @@unique([series, year, number])
+  @@index([issueDate])
+  @@index([status])
+  @@index([clientId])
+  @@map("invoice")
+}
+
+model InvoiceLine {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  position    Int     @db.SmallInt
+  description String  @db.VarChar(500)
+  quantity    Decimal @db.Decimal(12, 3)
+  /// Euros sin IGIC; 4 decimales para que el cálculo desde «importe final» cuadre al céntimo.
+  unitPrice   Decimal @map("unit_price") @db.Decimal(14, 4)
+  amountCents BigInt  @map("amount_cents")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, position])
+  @@map("invoice_line")
+}
+
+// ───────────────────── billing: proveedores y gastos ─────────────────────
+
+enum SupplierKind {
+  COMPANY
+  PROFESSIONAL
+  OTHER
+}
+
+enum ExpenseCategory {
+  PROFESSIONAL_SERVICES
+  TEACHING_REINFORCEMENT
+  MATERIALS_INSTRUMENTS
+  SUPPLIES
+  RENT
+  INSURANCE
+  OTHER
+}
+
+enum ExpenseStatus {
+  PENDING
+  PAID
+}
+
+model Supplier {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String       @db.VarChar(160)
+  taxId                String?      @map("tax_id") @db.VarChar(32)
+  kind                 SupplierKind @default(COMPANY)
+  /// IRPF que se propone en sus facturas (15 % habitual en profesionales).
+  defaultWithholdingBp Int          @default(0) @map("default_withholding_bp")
+  addressLine          String?      @map("address_line") @db.VarChar(255)
+  city                 String?      @db.VarChar(160)
+  email                String?      @db.VarChar(254)
+  phone                String?      @db.VarChar(40)
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt            DateTime?    @map("deleted_at") @db.Timestamptz(3)
+
+  expenses  Expense[]
+  recurring RecurringExpense[]
+
+  @@index([name])
+  @@map("supplier")
+}
+
+/// Factura recibida de un proveedor. El PDF se guarda con el módulo de documentos (entity_type EXPENSE).
+model Expense {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId        String          @map("supplier_id") @db.Uuid
+  /// Número de la factura del proveedor (único por proveedor).
+  number            String          @db.VarChar(60)
+  issueDate         DateTime        @map("issue_date") @db.Date
+  operationDate     DateTime?       @map("operation_date") @db.Date
+  activity          Activity
+  category          ExpenseCategory @default(OTHER)
+  concept           String          @db.VarChar(500)
+  baseCents         BigInt          @map("base_cents")
+  taxRateBp         Int             @map("tax_rate_bp")
+  taxCents          BigInt          @map("tax_cents")
+  otherCents        BigInt          @default(0) @map("other_cents")
+  withholdingRateBp Int             @default(0) @map("withholding_rate_bp")
+  withholdingCents  BigInt          @default(0) @map("withholding_cents")
+  /// base + IGIC + otros − retención (CHECK en la migración).
+  totalCents        BigInt          @map("total_cents")
+  status            ExpenseStatus   @default(PENDING)
+  paidOn            DateTime?       @map("paid_on") @db.Date
+  paymentMethod     PaymentMethod?  @map("payment_method")
+  notes             String?         @db.VarChar(2000)
+  journalEntryId    String?         @unique @map("journal_entry_id") @db.Uuid
+  paymentEntryId    String?         @unique @map("payment_entry_id") @db.Uuid
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier     Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry?  @relation("ExpenseAccrual", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  paymentEntry JournalEntry?  @relation("ExpensePayment", fields: [paymentEntryId], references: [id], onDelete: Restrict)
+  grants       GrantExpense[]
+
+  @@unique([supplierId, number])
+  @@index([issueDate])
+  @@index([status])
+  @@index([paidOn])
+  @@map("expense")
+}
+
+enum RecurrenceFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum RecurringPartyType {
+  SUPPLIER
+  WORKER
+}
+
+/// Plantilla de gasto periódico. Solo avisa del vencimiento; no crea facturas, nóminas ni asientos.
+model RecurringExpense {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  concept     String              @db.VarChar(160)
+  partyType   RecurringPartyType  @map("party_type")
+  supplierId  String?             @map("supplier_id") @db.Uuid
+  workerId    String?             @map("worker_id") @db.Uuid
+  activity    Activity
+  amountCents BigInt              @map("amount_cents")
+  frequency   RecurrenceFrequency
+  nextDueOn   DateTime            @map("next_due_on") @db.Date
+  active      Boolean             @default(true)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  worker   Worker?   @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@index([nextDueOn])
+  @@map("recurring_expense")
+}
+
+// ───────────────────── school: alumnado, tarifas y cuotas ─────────────────────
+
+enum SchoolModality {
+  EARLY_MUSIC
+  SOLFEGE
+  SOLFEGE_INSTRUMENT
+  INSTRUMENT
+}
+
+enum SchoolTariffKind {
+  ORDINARY
+  BAND_MEMBER
+  SIBLINGS
+  CUSTOM
+}
+
+enum SchoolTariffKey {
+  EARLY_MUSIC
+  SOLFEGE
+  SOLFEGE_INSTRUMENT
+  INSTRUMENT
+  BAND_MEMBER
+  SIBLINGS
+}
+
+enum StudentStatus {
+  ACTIVE
+  WITHDRAWN
+}
+
+model Student {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Vínculo opcional con la ficha de miembro (alumnado que también toca en la banda).
+  memberId       String?          @map("member_id") @db.Uuid
+  fullName       String           @map("full_name") @db.VarChar(160)
+  familyLabel    String?          @map("family_label") @db.VarChar(100)
+  modality       SchoolModality
+  tariffKind     SchoolTariffKind @default(ORDINARY) @map("tariff_kind")
+  customFeeCents BigInt?          @map("custom_fee_cents")
+  status         StudentStatus    @default(ACTIVE)
+  enrolledOn     DateTime?        @map("enrolled_on") @db.Date
+  paymentMethod  PaymentMethod?   @map("payment_method")
+  /// Destinatario de las facturas de cuotas (madre, padre, tutor o el propio alumno).
+  billingName    String?          @map("billing_name") @db.VarChar(160)
+  billingTaxId   String?          @map("billing_tax_id") @db.VarChar(32)
+  billingAddress String?          @map("billing_address") @db.VarChar(255)
+  billingCity    String?          @map("billing_city") @db.VarChar(160)
+  billingEmail   String?          @map("billing_email") @db.VarChar(254)
+  billingPhone   String?          @map("billing_phone") @db.VarChar(40)
+  notes          String?          @db.VarChar(2000)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  member Member?      @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  fees   StudentFee[]
+
+  @@index([fullName])
+  @@index([status])
+  @@map("student")
+}
+
+/// Importe mensual por modalidad o tarifa especial (IGIC incluido). Sin importe = pendiente de definir.
+model SchoolTariff {
+  key         SchoolTariffKey @id
+  amountCents BigInt?         @map("amount_cents")
+  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("school_tariff")
+}
+
+/// Cuota mensual de la escuela (IGIC incluido). Una por alumno y mes; siempre con su factura ESC.
+/// El estado de cobro es el de la factura: no se duplica aquí.
+model StudentFee {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  /// Primer día del mes al que corresponde la cuota.
+  period      DateTime @db.Date
+  amountCents BigInt   @map("amount_cents")
+  invoiceId   String   @unique @map("invoice_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, period])
+  @@index([period])
+  @@map("student_fee")
+}
+
+// ───────────────────── payroll: personal y nóminas ─────────────────────
+
+enum PayrollStatus {
+  PENDING
+  PAID
+}
+
+model Worker {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId  String?   @map("member_id") @db.Uuid
+  fullName  String    @map("full_name") @db.VarChar(160)
+  roleTitle String?   @map("role_title") @db.VarChar(130)
+  activity  Activity  @default(SCHOOL)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  member    Member?            @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  payrolls  Payroll[]
+  recurring RecurringExpense[]
+
+  @@map("worker")
+}
+
+/// Nómina tal y como la liquida la gestoría: aquí no se calculan bases ni tipos de cotización.
+model Payroll {
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workerId             String         @map("worker_id") @db.Uuid
+  /// Primer día del mes de devengo.
+  period               DateTime       @db.Date
+  accrualDate          DateTime       @map("accrual_date") @db.Date
+  activity             Activity
+  grossCents           BigInt         @map("gross_cents")
+  employeeSsCents      BigInt         @default(0) @map("employee_ss_cents")
+  irpfCents            BigInt         @default(0) @map("irpf_cents")
+  otherDeductionsCents BigInt         @default(0) @map("other_deductions_cents")
+  employerSsCents      BigInt         @default(0) @map("employer_ss_cents")
+  /// Líquido a percibir = bruto − SS trabajador − IRPF − otras deducciones (CHECK en la migración).
+  netCents             BigInt         @map("net_cents")
+  status               PayrollStatus  @default(PENDING)
+  paidOn               DateTime?      @map("paid_on") @db.Date
+  paymentMethod        PaymentMethod? @map("payment_method")
+  notes                String?        @db.VarChar(500)
+  journalEntryId       String?        @unique @map("journal_entry_id") @db.Uuid
+  paymentEntryId       String?        @unique @map("payment_entry_id") @db.Uuid
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  worker       Worker        @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  journalEntry JournalEntry? @relation("PayrollAccrual", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  paymentEntry JournalEntry? @relation("PayrollPayment", fields: [paymentEntryId], references: [id], onDelete: Restrict)
+
+  @@unique([workerId, period])
+  @@index([period])
+  @@map("payroll")
+}
+
+// ───────────────────── accounting: plan, ejercicios y diario ─────────────────────
+
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+}
+
+enum JournalSourceType {
+  MANUAL
+  OPENING
+  INVOICE
+  INVOICE_PAYMENT
+  EXPENSE
+  EXPENSE_PAYMENT
+  PAYROLL
+  PAYROLL_PAYMENT
+  REVERSAL
+  REGULARIZATION
+  CLOSING
+}
+
+/// Plan de cuentas (subconjunto del PGC de entidades sin fines lucrativos, ampliable).
+model LedgerAccount {
+  code      String   @id @db.VarChar(10)
+  name      String   @db.VarChar(160)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  lines JournalLine[]
+
+  @@map("ledger_account")
+}
+
+model FiscalYear {
+  year       Int              @id @db.SmallInt
+  status     FiscalYearStatus @default(OPEN)
+  closedAt   DateTime?        @map("closed_at") @db.Timestamptz(3)
+  closedById String?          @map("closed_by_id") @db.Uuid
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  closedBy UserAccount?   @relation(fields: [closedById], references: [id], onDelete: SetNull)
+  entries  JournalEntry[]
+
+  @@map("fiscal_year")
+}
+
+/// Asiento contable. Inmutable (trigger): las correcciones son asientos de reversión.
+/// Un trigger diferido comprueba al confirmar la transacción que Debe = Haber.
+model JournalEntry {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  year         Int               @db.SmallInt
+  sequence     Int
+  entryDate    DateTime          @map("entry_date") @db.Date
+  activity     Activity
+  reference    String            @db.VarChar(80)
+  concept      String            @db.VarChar(300)
+  sourceType   JournalSourceType @map("source_type")
+  sourceId     String?           @map("source_id") @db.Uuid
+  reversalOfId String?           @unique @map("reversal_of_id") @db.Uuid
+  createdById  String?           @map("created_by_id") @db.Uuid
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  fiscalYear FiscalYear    @relation(fields: [year], references: [year], onDelete: Restrict)
+  createdBy  UserAccount?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  reversalOf JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy JournalEntry? @relation("Reversal")
+  lines      JournalLine[]
+
+  invoiceAccrual Invoice?       @relation("InvoiceAccrual")
+  invoicePayment Invoice?       @relation("InvoicePayment")
+  expenseAccrual Expense?       @relation("ExpenseAccrual")
+  expensePayment Expense?       @relation("ExpensePayment")
+  payrollAccrual Payroll?       @relation("PayrollAccrual")
+  payrollPayment Payroll?       @relation("PayrollPayment")
+  bankMovements  BankMovement[]
+
+  @@unique([year, sequence])
+  @@index([entryDate])
+  @@index([sourceType, sourceId])
+  @@map("journal_entry")
+}
+
+model JournalLine {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entryId     String  @map("entry_id") @db.Uuid
+  position    Int     @db.SmallInt
+  accountCode String  @map("account_code") @db.VarChar(10)
+  description String? @db.VarChar(300)
+  debitCents  BigInt  @default(0) @map("debit_cents")
+  creditCents BigInt  @default(0) @map("credit_cents")
+
+  entry   JournalEntry  @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  account LedgerAccount @relation(fields: [accountCode], references: [code], onDelete: Restrict)
+
+  @@unique([entryId, position])
+  @@index([accountCode])
+  @@map("journal_line")
+}
+
+// ───────────────────── treasury: extractos bancarios ─────────────────────
+
+/// Apunte importado de un extracto. No genera asientos: solo se concilia con uno existente.
+model BankMovement {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountLabel   String    @map("account_label") @db.VarChar(80)
+  bookedOn       DateTime  @map("booked_on") @db.Date
+  description    String    @db.VarChar(500)
+  /// Con signo: positivo = abono, negativo = cargo.
+  amountCents    BigInt    @map("amount_cents")
+  /// SHA-256 de cuenta|fecha|concepto normalizado|importe; evita importar dos veces el mismo apunte.
+  fingerprint    String    @unique @db.Char(64)
+  journalEntryId String?   @map("journal_entry_id") @db.Uuid
+  reconciledAt   DateTime? @map("reconciled_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+
+  @@index([bookedOn])
+  @@index([journalEntryId])
+  @@map("bank_movement")
+}
+
+// ───────────────────── budgets ─────────────────────
+
+enum BudgetKind {
+  INCOME
+  EXPENSE
+}
+
+model BudgetLine {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  year          Int        @db.SmallInt
+  activity      Activity
+  kind          BudgetKind
+  /// Prefijo de cuenta: 705 suma 705, 7050, 70501...
+  accountPrefix String     @map("account_prefix") @db.VarChar(10)
+  label         String     @db.VarChar(120)
+  amountCents   BigInt     @map("amount_cents")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([year, activity, kind, accountPrefix])
+  @@map("budget_line")
+}
+
+// ───────────────────── grants: subvenciones ─────────────────────
+
+enum GrantStatus {
+  PENDING
+  IN_PREPARATION
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+}
+
+model Grant {
+  id                    String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  issuer                String      @db.VarChar(160)
+  title                 String      @db.VarChar(180)
+  year                  Int         @db.SmallInt
+  activity              Activity
+  awardedCents          BigInt      @map("awarded_cents")
+  /// Importe cobrado según la entidad (informativo: el cobro se contabiliza aparte).
+  receivedCents         BigInt      @default(0) @map("received_cents")
+  justificationDeadline DateTime?   @map("justification_deadline") @db.Date
+  status                GrantStatus @default(PENDING)
+  reference             String?     @db.VarChar(120)
+  notes                 String?     @db.VarChar(2000)
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(3)
+
+  expenses GrantExpense[]
+
+  @@index([year])
+  @@map("grant")
+}
+
+/// Gastos imputados a la justificación de una subvención.
+model GrantExpense {
+  grantId   String   @map("grant_id") @db.Uuid
+  expenseId String   @map("expense_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  grant   Grant   @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@id([grantId, expenseId])
+  @@index([expenseId])
+  @@map("grant_expense")
+}
+
+// ───────────────────── internal-cash: tesorería interna ─────────────────────
+
+enum CashDirection {
+  IN
+  OUT
+}
+
+enum InternalCashCategory {
+  RAFFLE
+  MUSIC_REINFORCEMENT
+  EVENT
+  CASH
+  OTHER
+}
+
+enum ReviewStatus {
+  PENDING
+  REVIEWED
+}
+
+/// Libro auxiliar de control de caja. Nunca genera asientos ni afecta a la contabilidad oficial.
+model InternalCashMovement {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurredOn  DateTime             @map("occurred_on") @db.Date
+  direction   CashDirection
+  amountCents BigInt               @map("amount_cents")
+  activity    Activity
+  category    InternalCashCategory
+  concept     String               @db.VarChar(240)
+  notes       String?              @db.VarChar(500)
+  review      ReviewStatus         @default(PENDING)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime?            @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([occurredOn])
+  @@map("internal_cash_movement")
 }

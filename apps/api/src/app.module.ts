@@ -14,7 +14,17 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './modules/auth/guards/permissions.guard';
 import { BandProfileModule } from './modules/band-profile/band-profile.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { BudgetsModule } from './modules/budgets/budgets.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { GrantsModule } from './modules/grants/grants.module';
+import { InternalCashModule } from './modules/internal-cash/internal-cash.module';
 import { MembersModule } from './modules/members/members.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
+import { SchoolModule } from './modules/school/school.module';
+import { TaxModule } from './modules/tax/tax.module';
+import { TreasuryModule } from './modules/treasury/treasury.module';
 
 @Module({
   imports: [
@@ -32,6 +42,17 @@ import { MembersModule } from './modules/members/members.module';
     BandProfileModule,
     MembersModule,
     DocumentsModule,
+    // Gestión económica
+    BillingModule,
+    SchoolModule,
+    PayrollModule,
+    AccountingModule,
+    TreasuryModule,
+    BudgetsModule,
+    TaxModule,
+    GrantsModule,
+    InternalCashModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -53,5 +53,7 @@ export interface BandProfile {
   default_currency: string;
   timezone: string;
   founded_on: string | null;
+  iban: string | null;
+  invoice_footer: string | null;
   updated_at: string;
 }
