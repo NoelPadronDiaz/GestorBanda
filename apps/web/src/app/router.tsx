@@ -148,6 +148,14 @@ export const router = createBrowserRouter([
             async () => (await import('@/features/band-profile/BandProfilePage')).BandProfilePage,
           ),
 
+          // Perfil del usuario: disponible para cualquier sesión, sin permiso específico.
+          {
+            path: 'profile',
+            lazy: async () => ({
+              Component: (await import('@/features/profile/ProfilePage')).ProfilePage,
+            }),
+          },
+
           { path: '*', element: <NotFoundPage /> },
         ],
       },

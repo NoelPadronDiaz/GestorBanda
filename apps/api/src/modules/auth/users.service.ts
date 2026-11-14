@@ -52,6 +52,17 @@ export class UsersService {
     return this.prisma.role.findUnique({ where: { code } });
   }
 
+  findPasswordHash(id: string) {
+    return this.prisma.userAccount.findUnique({ where: { id }, select: { passwordHash: true } });
+  }
+
+  async updatePassword(id: string, passwordHash: string): Promise<void> {
+    await this.prisma.userAccount.update({
+      where: { id },
+      data: { passwordHash, passwordChangedAt: new Date() },
+    });
+  }
+
   async touchLastLogin(id: string): Promise<void> {
     await this.prisma.userAccount.update({ where: { id }, data: { lastLoginAt: new Date() } });
   }

@@ -116,6 +116,14 @@ export class TokenService {
     return existing.userId;
   }
 
+  /** Cierra todas las sesiones abiertas de un usuario (p. ej. al cambiar la contraseña). */
+  async revokeAllForUser(userId: string, reason: RefreshTokenRevokeReason): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: reason },
+    });
+  }
+
   async revokeFamily(familyId: string, reason: RefreshTokenRevokeReason): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: { familyId, revokedAt: null },

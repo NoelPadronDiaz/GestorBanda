@@ -90,8 +90,10 @@
       "grants": "Ayudas concedidas, cobros y gastos que las justifican.",
       "internalCash": "Rifas, refuerzos y eventos fuera de la contabilidad oficial.",
       "members": "Fichas de músicos y socios.",
-      "bandProfile": "Datos fiscales, IBAN y pie de factura."
-    }
+      "bandProfile": "Datos fiscales, IBAN y pie de factura.",
+      "profile": "Tus datos de acceso y el cambio de contraseña."
+    },
+    "profile": "Mi perfil"
   },
   "auth": {
     "loginTitle": "Iniciar sesión",
@@ -937,7 +939,35 @@
       "YEAR_CLOSED": "El ejercicio está cerrado: no admite más asientos.",
       "NO_ENTRIES": "El ejercicio no tiene asientos que cerrar.",
       "NEXT_YEAR_HAS_ENTRIES": "Ya hay asientos en el ejercicio siguiente.",
-      "PATRIMONY_UNBALANCED": "Las cuentas de balance no cuadran."
-    }
+      "PATRIMONY_UNBALANCED": "Las cuentas de balance no cuadran.",
+      "WRONG_CURRENT_PASSWORD": "La contraseña actual no es correcta.",
+      "SAME_PASSWORD": "La nueva contraseña debe ser distinta de la actual."
+    },
+    "BAD_REQUEST": "La petición no es válida."
+  },
+  "profile": {
+    "eyebrow": "Cuenta",
+    "title": "Mi perfil",
+    "subtitle": "Datos de tu cuenta de acceso y cambio de contraseña.",
+    "account": "Cuenta",
+    "email": "Correo de acceso",
+    "roles": "Roles",
+    "lastLogin": "Último acceso",
+    "permissions": "Permisos",
+    "permissionCount_one": "{{count}} permiso",
+    "permissionCount_other": "{{count}} permisos",
+    "changePassword": "Cambiar contraseña",
+    "passwordHint": "Al cambiarla se cierran tus sesiones en otros dispositivos; en este navegador sigues dentro.",
+    "currentPassword": "Contraseña actual",
+    "newPassword": "Nueva contraseña",
+    "newPasswordHint": "Mínimo 12 caracteres. Mejor una frase fácil de recordar que una palabra con símbolos.",
+    "confirmPassword": "Repite la nueva contraseña",
+    "passwordTooShort": "Debe tener al menos 12 caracteres",
+    "passwordMismatch": "Las contraseñas no coinciden",
+    "passwordSame": "La nueva contraseña debe ser distinta de la actual",
+    "passwordChanged": "Contraseña cambiada",
+    "saving": "Guardando…",
+    "show": "Mostrar",
+    "hide": "Ocultar"
   }
 }

@@ -17,6 +17,7 @@ function makeAuth(status: AuthStatus, permissions: Permission[] = []): AuthConte
     can: (permission) => permissions.includes(permission),
     login: async () => undefined,
     logout: async () => undefined,
+    changePassword: async () => undefined,
   };
 }
 

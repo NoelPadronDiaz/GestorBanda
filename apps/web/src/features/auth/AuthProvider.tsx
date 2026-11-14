@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Permission } from '@alcaravan/shared';
-import { loginRequest, logoutRequest } from '@/api/auth';
+import { changePasswordRequest, loginRequest, logoutRequest } from '@/api/auth';
 import { refreshSession, setSessionLostHandler, tokenStore } from '@/api/client';
 import type { Me } from '@/api/types';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './auth-context';
@@ -45,6 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const changePassword = useCallback<AuthContextValue['changePassword']>(
+    async (input) => {
+      const session = await changePasswordRequest(input);
+      tokenStore.set(session.access_token);
+      queryClient.setQueryData(ME_KEY, session.user);
+    },
+    [queryClient],
+  );
+
   const logout = useCallback<AuthContextValue['logout']>(async () => {
     try {
       await logoutRequest();
@@ -67,8 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       can: (permission: Permission) => user?.permissions.includes(permission) ?? false,
       login,
       logout,
+      changePassword,
     }),
-    [status, user, login, logout],
+    [status, user, login, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

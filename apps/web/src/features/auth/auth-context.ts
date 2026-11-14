@@ -11,6 +11,8 @@ export interface AuthContextValue {
   can: (permission: Permission) => boolean;
   login: (credentials: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  /** Cambia la contraseña y adopta la sesión nueva que devuelve la API. */
+  changePassword: (input: { current_password: string; new_password: string }) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

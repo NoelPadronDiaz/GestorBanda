@@ -5,7 +5,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
 import type { Env } from '../../config/env';
 import { REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH } from './auth.constants';
-import { LoginDto, MeResponseDto, SessionResponseDto } from './auth.dto';
+import { ChangePasswordDto, LoginDto, MeResponseDto, SessionResponseDto } from './auth.dto';
 import { AuthService, type SessionResult } from './auth.service';
 import type { AuthenticatedUser } from './auth.types';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -61,6 +61,20 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.logout(this.readRefreshCookie(req));
     res.clearCookie(REFRESH_COOKIE_NAME, this.cookieOptions());
+  }
+
+  /** Cambio de contraseña del propio usuario; cierra sus otras sesiones y renueva la cookie. */
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<SessionResponseDto> {
+    const session = await this.auth.changePassword(user.id, dto.current_password, dto.new_password);
+    return this.respondWithSession(res, session);
   }
 
   @Public()

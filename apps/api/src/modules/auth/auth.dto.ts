@@ -46,3 +46,17 @@ export class SessionResponseDto {
   expires_in!: number;
   user!: MeResponseDto;
 }
+
+export class ChangePasswordDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  current_password!: string;
+
+  @ApiProperty({ minLength: 12, description: 'Mínimo 12 caracteres' })
+  @IsString()
+  @MinLength(12)
+  @MaxLength(128)
+  new_password!: string;
+}

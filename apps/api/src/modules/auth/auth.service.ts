@@ -87,6 +87,50 @@ export class AuthService {
     }
   }
 
+  /**
+   * Cambia la contraseña del usuario autenticado. Cierra todas sus sesiones (otros dispositivos
+   * incluidos) y devuelve una nueva para que este navegador siga dentro.
+   * La contraseña actual incorrecta es un 400 con `reason`, no un 401: la web no debe
+   * interpretarlo como sesión caducada.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<SessionResult> {
+    const account = await this.users.findPasswordHash(userId);
+    const user = await this.users.loadAuthenticatedUser(userId);
+    if (!account || !user) throw invalidRefreshToken();
+
+    if (!(await this.passwords.verify(account.passwordHash, currentPassword))) {
+      await this.audit.record({
+        action: 'auth.password.change_failed',
+        entityType: 'USER_ACCOUNT',
+        entityId: userId,
+        actorUserId: userId,
+      });
+      throw new AppException(HttpStatus.BAD_REQUEST, 'BAD_REQUEST', 'Current password is wrong', {
+        reason: 'WRONG_CURRENT_PASSWORD',
+      });
+    }
+    if (currentPassword === newPassword) {
+      throw new AppException(HttpStatus.BAD_REQUEST, 'BAD_REQUEST', 'New password must differ', {
+        reason: 'SAME_PASSWORD',
+      });
+    }
+
+    await this.users.updatePassword(userId, await this.passwords.hash(newPassword));
+    await this.tokens.revokeAllForUser(userId, 'LOGOUT');
+    const refresh = await this.tokens.issueForLogin(userId);
+    await this.audit.record({
+      action: 'auth.password.changed',
+      entityType: 'USER_ACCOUNT',
+      entityId: userId,
+      actorUserId: userId,
+    });
+    return this.buildSession(user, refresh.token, refresh.expiresAt);
+  }
+
   private buildSession(
     user: AuthenticatedUser,
     refreshToken: string,

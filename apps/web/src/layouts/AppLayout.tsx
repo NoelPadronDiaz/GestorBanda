@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut, Menu, X } from 'lucide-react';
+import { ChevronDown, LogOut, Menu, UserRound, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useLocation } from 'react-router';
@@ -119,9 +119,12 @@ export function AppLayout() {
           </Button>
           <span className="text-sm font-bold tracking-[0.14em] md:hidden">{t('app.name')}</span>
           <div className="ml-auto flex items-center gap-3">
-            <span className="hidden truncate text-sm text-muted-foreground sm:block">
-              {user?.email}
-            </span>
+            <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+              <NavLink to="/profile" title={t('nav.profile')}>
+                <UserRound />
+                <span className="hidden max-w-56 truncate sm:inline">{user?.email}</span>
+              </NavLink>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void logout()}>
               <LogOut />
               {t('common.logout')}

@@ -11,6 +11,7 @@ function renderLogin(login: AuthContextValue['login']) {
     can: () => false,
     login,
     logout: async () => undefined,
+    changePassword: async () => undefined,
   };
   return render(
     <AuthContext.Provider value={auth}>
