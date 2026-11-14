@@ -32,3 +32,6 @@ Thumbs.db
 # que los Dockerfile instalan si existen. Nunca se versionan; ver docker/certs/.gitkeep.
 docker/certs/*
 !docker/certs/.gitkeep
+
+# Copia temporal de dist/ durante el empaquetado para Vercel (apps/api/scripts/bundle.mjs)
+.dist-tsc/
